@@ -14,7 +14,6 @@ import aiohttp
 import discord
 from discord.ext import commands
 
-
 dir_path = os.path.dirname(
     os.path.dirname(
         os.path.dirname(
@@ -482,15 +481,12 @@ async def send_error_embed_internal(bot: discord.Client,
 
         args_str = ['```py']
         for index, arg in enumerate(args):
-            # print(type(arg))
             args_str.append(f'[{index}]: {arg!r}')
-            if type(arg) == discord.Message:
+            if isinstance(arg, discord.Message):
                 msg = arg
 
         args_str.append('```')
         e.add_field(name='Args', value='\n'.join(args_str), inline=False)
-        # await self.error_channel.send(jump_url, embed=e)
-        # traceback.print_exc()
 
     if msg:
         e.add_field(name="Author", value=f'{msg.author} (ID: {msg.author.id})')
@@ -500,12 +496,12 @@ async def send_error_embed_internal(bot: discord.Client,
     else:
         jump_url = ""
 
-    traceback.print_tb(error.__traceback__)
     print(discord.utils.utcnow())
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
 
-    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
+    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
+    logging.error(f"Error in {qualified_name}: {exc}")
 
     if ctx:
         if ctx.message:
