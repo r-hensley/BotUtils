@@ -450,6 +450,7 @@ async def send_error_embed_internal(bot: discord.Client,
                                     ctx_or_event: Union[commands.Context, discord.Interaction, str],
                                     error: BaseException,
                                     *args, **kwargs):
+    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
     # command or interaction
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
@@ -476,17 +477,19 @@ async def send_error_embed_internal(bot: discord.Client,
         qualified_name = event
         e = discord.Embed(title='Event Error', colour=0xa32952)
         e.add_field(name='Event', value=event)
-        e.description = f'```py\n{traceback.format_exc()}\n```'
+        # e.description = f'```py\n{traceback.format_exc()}\n```'
+        # e.description = f'```py\n{exc}\n```'
         e.timestamp = discord.utils.utcnow()
 
-        args_str = ['```py']
-        for index, arg in enumerate(args):
-            args_str.append(f'[{index}]: {arg!r}')
-            if isinstance(arg, discord.Message):
-                msg = arg
+        if args:
+            args_str = ['```py']
+            for index, arg in enumerate(args):
+                args_str.append(f'[{index}]: {arg!r}')
+                if isinstance(arg, discord.Message):
+                    msg = arg
 
-        args_str.append('```')
-        e.add_field(name='Args', value='\n'.join(args_str), inline=False)
+            args_str.append('```')
+            e.add_field(name='Args', value='\n'.join(args_str), inline=False)
 
     if msg:
         e.add_field(name="Author", value=f'{msg.author} (ID: {msg.author.id})')
@@ -500,7 +503,6 @@ async def send_error_embed_internal(bot: discord.Client,
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
 
-    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
     logging.error(f"Error in {qualified_name}: {exc}")
 
     if ctx:
