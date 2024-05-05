@@ -164,7 +164,7 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
         raise
 
 
-async def safe_reply(message: discord.Message, content="", embed=None):
+async def safe_reply(message: Union[discord.Message, commands.Context], content="", embed=None):
     try:
         msg = await message.reply(content, embed=embed)
     except discord.HTTPException:
