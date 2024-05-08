@@ -451,6 +451,7 @@ async def send_error_embed_internal(bot: discord.Client,
                                     error: BaseException,
                                     *args, **kwargs):
     exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
+
     # command or interaction
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
