@@ -163,6 +163,12 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
 
         raise
 
+    # discord.errors.HTTPException: 400 Bad Request (error code: 240000): Message blocked by harmful links filter
+    except discord.HTTPException as e:
+        if e.code == 240000:
+            return await destination.send("Discord blocked me from sending that message because it" 
+                                          "contains a harmful link.")
+
 
 async def safe_reply(message: Union[discord.Message, commands.Context], content="", embed=None):
     try:
