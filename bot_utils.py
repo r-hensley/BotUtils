@@ -8,6 +8,7 @@ import sys
 import traceback
 
 from copy import deepcopy
+from datetime import datetime
 from typing import Optional, List, Union, Tuple, Callable
 
 import aiohttp
@@ -506,7 +507,7 @@ async def send_error_embed_internal(bot: discord.Client,
     else:
         jump_url = ""
 
-    print(discord.utils.utcnow())
+    print(datetime.now(), file=sys.stderr)
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
 
