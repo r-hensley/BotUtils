@@ -160,7 +160,7 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
             try:
                 await safe_send(ctx.author, msg_content)
             except (discord.Forbidden, discord.HTTPException):
-                pass
+                pass  # pass ok because this is already assuming discord.Forbidden and we are still failing to send
 
         raise
 
@@ -169,6 +169,8 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
         if e.code == 240000:
             return await destination.send("Discord blocked me from sending that message because it" 
                                           "contains a harmful link.")
+        else:
+            raise
 
 
 async def safe_reply(message: Union[discord.Message, commands.Context], content="", embed=None):
