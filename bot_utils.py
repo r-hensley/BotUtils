@@ -461,7 +461,7 @@ async def send_error_embed_internal(bot: discord.Client,
     elif jump_url:
         traceback_text = f'{jump_url}\n```py\n{exc}```'
     else:
-        traceback_text = f'```py\n{exc}```'
+        traceback_text = f'```py\n{exc[:1016]}```'
 
     e.timestamp = discord.utils.utcnow()
     traceback_logging_channel_id = os.getenv("ERROR_CHANNEL_ID")
