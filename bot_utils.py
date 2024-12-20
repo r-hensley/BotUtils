@@ -534,24 +534,49 @@ class RaiView(discord.ui.View):
         await send_error_embed(interaction.client, interaction, error, e)
 
 
-async def aiohttp_get(ctx: commands.Context, url: str) -> str:
+async def aiohttp_get(url: str) -> bytes:
+    """Wrapper just for getting the response"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return await resp.read()
+        
+        
+async def _aiohttp_get_text(url: str) -> (aiohttp.ClientResponse, str):
+    """Wrapper just for getting the response"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return resp, (await resp.text())
+
+
+async def aiohttp_get_text(ctx: commands.Context = None, url: str = "") -> str:
+    if not url:
+        raise ValueError("No URL provided to aiohttp_get")
+    
+    text: str
+    
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                response = resp
-                text = await resp.text()
+        response, text = await _aiohttp_get_text(url)
     except (aiohttp.InvalidURL, aiohttp.ClientConnectorError):
-        await safe_send(ctx, f'invalid_url:  Your URL was invalid ({url})')
+        if ctx:
+            await safe_send(ctx, f'invalid_url:  Your URL was invalid ({url})')
+        else:
+            raise ValueError(f'invalid_url:  Your URL was invalid ({url})')
         return ''
 
     if not text:
-        await safe_send(ctx, embed=red_embed("I received nothing from the site for your search query."))
+        if ctx:
+            await safe_send(ctx, embed=red_embed("I received nothing from the site for your search query."))
+        else:
+            raise ValueError("I received nothing from the site for your search query.")
         return ''
 
     if response.status == 200:
         return text
     else:
-        await safe_send(ctx, f'html_error: Error {response.status}: {response.reason} ({url})')
+        if ctx:
+            await safe_send(ctx, f'html_error: Error {response.status}: {response.reason} ({url})')
+        else:
+            raise ValueError(f'html_error: Error {response.status}: {response.reason} ({url})')
         return ''
 
 
