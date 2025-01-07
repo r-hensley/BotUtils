@@ -593,6 +593,7 @@ def asyncio_task(func: Callable, *args, **kwargs):
     # task = asyncio.create_task(wrapper())
     task = asyncio.create_task(func(*args, **kwargs))
     task.add_done_callback(asyncio_task_done_callback)
+    return task
 
 
 def asyncio_task_done_callback(task: asyncio.Task):
