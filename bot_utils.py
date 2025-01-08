@@ -240,9 +240,11 @@ def _predump_json(name: str = 'db'):
         db_copy = deepcopy(here.bot.db)
     elif name == 'stats':
         db_copy = deepcopy(here.bot.stats)
+    elif name == 'message_queue':
+        db_copy = deepcopy(here.bot.message_queue.to_dict_list())
     else:
-        raise ValueError("name must be 'db' or 'stats'")
-
+        raise ValueError("name must be 'db' or 'stats' or 'message_queue'")
+        
     if not os.path.exists(f'{dir_path}/{name}_2.json'):
         # if backup files don't exist yet, create them
         shutil.copy(f'{dir_path}/{name}.json', f'{dir_path}/{name}_2.json')
@@ -294,13 +296,12 @@ def load_db(bot, name: str):
         PermissionError: If the program does not have permission to open the JSON file.
         json.decoder.JSONDecodeError: If there is an error decoding JSON data from the file.
     """
-    if name not in ['db', 'stats']:
-        raise ValueError("name must be 'db' or 'stats'")
+    if name not in ['db', 'stats', 'message_queue']:
+        raise ValueError("name must be 'db' or 'stats' or 'message_queue'")
     try:
         with open(f"{dir_path}/{name}.json", "r") as read_file1:
             read_file1.seek(0)
             data = json.load(read_file1)
-            setattr(bot, name, data)
 
     except FileNotFoundError:
         logging.warning(f"File {name}.json not found.")
@@ -315,6 +316,14 @@ def load_db(bot, name: str):
         else:
             logging.error(f"Error decoding JSON in {name}.json: {e}")
             raise
+    
+    else:
+        if name == 'message_queue':
+            from ..helper_functions import MessageQueue
+            bot.message_queue = MessageQueue.from_dict(data)
+        else:
+            setattr(bot, name, data)
+            
 
 
 def rem_emoji_url(msg: Union[discord.Message, str]) -> str:
@@ -541,15 +550,19 @@ class RaiView(discord.ui.View):
 
 async def aiohttp_get(url: str, headers: dict = None) -> bytes:
     """Wrapper just for getting the response"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
+    if isinstance(url, commands.Context):
+        raise ValueError("You passed a context to aiohttp_get instead of a URL")
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as resp:
             return await resp.read()
         
         
 async def _aiohttp_get_text(url: str, headers: dict = None) -> (aiohttp.ClientResponse, str):
     """Wrapper just for getting the response"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
+    if isinstance(url, commands.Context):
+        raise ValueError("You passed a context to _aiohttp_get_text instead of a URL")
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as resp:
             return resp, (await resp.text())
 
 
@@ -586,6 +599,9 @@ async def aiohttp_get_text(ctx: commands.Context = None, url: str = "", headers:
 
 
 def asyncio_task(func: Callable, *args, **kwargs):
+    if not isinstance(func, Callable):
+        raise ValueError("The first argument must be a callable function.")
+    
     @wraps(func)
     async def ensure_async():
         if asyncio.iscoroutinefunction(func):
