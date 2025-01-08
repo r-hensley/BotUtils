@@ -6,6 +6,8 @@ import re
 import shutil
 import sys
 import traceback
+from functools import wraps
+
 import emoji
 
 from copy import deepcopy
@@ -315,17 +317,20 @@ def load_db(bot, name: str):
             raise
 
 
-def rem_emoji_url(msg):
+def rem_emoji_url(msg: Union[discord.Message, str]) -> str:
     if isinstance(msg, discord.Message):
-        msg = msg.content
-    new_msg = _emoji.sub('', _url.sub('', msg))
-    for char in msg:
+        msg_content = msg.content
+    else:
+        assert isinstance(msg, str), f"msg is not a string or discord.Message: {msg} ({type(msg)})"
+        msg_content = msg
+    new_msg = _emoji.sub('', _url.sub('', msg_content))
+    for char in msg_content:
         if emoji.is_emoji(char):
             new_msg = new_msg.replace(char, '').replace('  ', '')
     return new_msg
 
 
-def jpenratio(msg_content):
+def jpenratio(msg_content: str) -> Optional[float]:
     text = _emoji.sub('', _url.sub('', msg_content))
     en, jp, total = get_character_spread(text)
     return en / total if total else None
@@ -555,7 +560,7 @@ async def aiohttp_get_text(ctx: commands.Context = None, url: str = "", headers:
     text: str
     
     try:
-        response, text = await _aiohttp_get_text(url)
+        response, text = await _aiohttp_get_text(url, headers=headers)
     except (aiohttp.InvalidURL, aiohttp.ClientConnectorError):
         if ctx:
             await safe_send(ctx, f'invalid_url:  Your URL was invalid ({url})')
@@ -581,19 +586,17 @@ async def aiohttp_get_text(ctx: commands.Context = None, url: str = "", headers:
 
 
 def asyncio_task(func: Callable, *args, **kwargs):
-    async def wrapper():
-        try:
-            # Execute the async function
+    @wraps(func)
+    async def ensure_async():
+        if asyncio.iscoroutinefunction(func):
             return await func(*args, **kwargs)
-        except Exception as e:
-            print(f"Exception in {func.__name__}: {e}")
-            # Handle exception here if needed
-            raise  # Re-raise the exception for the callback to catch
+        else:
+            return func(*args, **kwargs)
 
-    # task = asyncio.create_task(wrapper())
-    task = asyncio.create_task(func(*args, **kwargs))
+    task = asyncio.create_task(ensure_async())
     task.add_done_callback(asyncio_task_done_callback)
     return task
+
 
 
 def asyncio_task_done_callback(task: asyncio.Task):
