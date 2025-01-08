@@ -534,21 +534,21 @@ class RaiView(discord.ui.View):
         await send_error_embed(interaction.client, interaction, error, e)
 
 
-async def aiohttp_get(url: str) -> bytes:
+async def aiohttp_get(url: str, headers: dict = None) -> bytes:
     """Wrapper just for getting the response"""
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
+        async with session.get(url, headers=headers) as resp:
             return await resp.read()
         
         
-async def _aiohttp_get_text(url: str) -> (aiohttp.ClientResponse, str):
+async def _aiohttp_get_text(url: str, headers: dict = None) -> (aiohttp.ClientResponse, str):
     """Wrapper just for getting the response"""
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
+        async with session.get(url, headers=headers) as resp:
             return resp, (await resp.text())
 
 
-async def aiohttp_get_text(ctx: commands.Context = None, url: str = "") -> str:
+async def aiohttp_get_text(ctx: commands.Context = None, url: str = "", headers: dict = None) -> str:
     if not url:
         raise ValueError("No URL provided to aiohttp_get")
     
