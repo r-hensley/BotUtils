@@ -127,7 +127,7 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
     except TypeError:
         raise TypeError("You tried to pass something in as content to safe_send that can't be converted to a string")
     
-    if len(content) > 2000:
+    if len(content or '') > 2000:
         raise ValueError(f"Content to send is too long: {len(content)} characters (2000 max)")
 
     perms_set = perms = False
@@ -605,24 +605,29 @@ def asyncio_task(func: Callable, *args, **kwargs):
     if not isinstance(func, Callable):
         raise ValueError("The first argument must be a callable function.")
     
-    @wraps(func)
-    async def ensure_async():
-        if asyncio.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        else:
+    if asyncio.iscoroutinefunction(func):
+        coro = func(*args, **kwargs)  # Create coroutine
+    else:
+        # If not a coroutine function, wrap it in an async function
+        async def wrapper():
             return func(*args, **kwargs)
+        
+        coro = wrapper()
 
-    task = asyncio.create_task(ensure_async())
+    task = asyncio.create_task(coro)
     task.add_done_callback(asyncio_task_done_callback)
     return task
 
-
-
 def asyncio_task_done_callback(task: asyncio.Task):
-    coro_name = task.get_coro().__qualname__
-    if task.exception():
-        print(f"Error in {coro_name}: {task.exception()}")
-        asyncio_task(send_error_embed, here.bot, coro_name, task.exception())
-    else:
-        pass
-        # print(f"Task {coro_name} completed successfully.")
+    try:
+        coro_name = task.get_coro().__qualname__
+        if task.exception():
+            print(f"Error in {coro_name}: {task.exception()}")
+            asyncio_task(send_error_embed, here.bot, coro_name, task.exception())
+        else:
+            pass
+            # print(f"Task {coro_name} completed successfully.")
+    except asyncio.CancelledError:
+        print(f"Task {task.get_coro().__qualname__} was cancelled.")
+    except Exception as e:
+        print(f"Unexpected error in task callback: {e}")
