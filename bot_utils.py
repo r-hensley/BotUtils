@@ -23,9 +23,17 @@ dir_path = os.path.dirname(
         os.path.dirname(
             os.path.dirname(os.path.realpath(__file__)))))
 
-here = sys.modules[__name__]
-here.bot = None
-here.loop = None
+# here = sys.modules[__name__]
+# here.bot = None
+# here.loop = None
+
+class Here:
+    def __init__(self):
+        from Rai import Rai
+        self.bot: Optional[Rai] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+
+here = Here()
 
 BANS_CHANNEL_ID = 329576845949534208
 SP_SERV_ID = 243838819743432704
@@ -40,8 +48,9 @@ JP_SERV_GUILD = discord.Object(JP_SERVER_ID)
 _lock = asyncio.Lock()
 
 
-def setup(bot: commands.Bot, loop):
+def setup(bot, loop):
     """This command is run in the setup_hook function in Rai.py"""
+    global here
     if here.bot is None:
         here.bot = bot
     else:
@@ -605,6 +614,12 @@ def asyncio_task(func: Callable, *args, **kwargs):
     if not isinstance(func, Callable):
         raise ValueError("The first argument must be a callable function.")
     
+    if "task_name" in kwargs:
+        task_name = kwargs["task_name"]
+        del kwargs["task_name"]
+    else:
+        task_name = func.__qualname__
+    
     if asyncio.iscoroutinefunction(func):
         coro = func(*args, **kwargs)  # Create coroutine
     else:
@@ -613,8 +628,9 @@ def asyncio_task(func: Callable, *args, **kwargs):
             return func(*args, **kwargs)
         
         coro = wrapper()
-
+        
     task = asyncio.create_task(coro)
+    task.set_name(task_name)
     task.add_done_callback(asyncio_task_done_callback)
     return task
 
