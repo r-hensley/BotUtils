@@ -442,9 +442,6 @@ async def send_error_embed_internal(bot: discord.Client,
 
     # event
     else:
-        c = here.bot.get_channel(304110816607862785)
-        await c.send(f"bot_utils on_error: {ctx_or_event}")
-        
         ctx = None
         event = ctx_or_event
         msg = None
