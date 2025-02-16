@@ -647,3 +647,19 @@ def asyncio_task_done_callback(task: asyncio.Task):
         print(f"Task {task.get_coro().__qualname__} was cancelled.")
     except Exception as e:
         print(f"Unexpected error in task callback: {e}")
+
+
+def split_text_into_segments(text, segment_length=1024) -> List[str]:
+    """Split a long text into segments of a specified length."""
+    segments = []
+    while len(text) > segment_length:
+        # Find the last new line before the segment limit to avoid breaking words
+        split_index = text.rfind('\n', 0, segment_length)
+        if split_index == -1:  # If no new line is found, split at space
+            split_index = text.rfind(' ', 0, segment_length)
+            if split_index == -1:  # If no space is found, split at the limit
+                split_index = segment_length
+        segments.append(text[:split_index])
+        text = text[split_index:].lstrip()  # Remove leading spaces in the next segment
+    segments.append(text)  # Append the last segment
+    return segments
