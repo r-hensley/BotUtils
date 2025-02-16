@@ -6,13 +6,12 @@ import re
 import shutil
 import sys
 import traceback
-from functools import wraps
 
 import emoji
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Optional, List, Union, Tuple, Callable
+from typing import Optional, Union, Callable
 
 import aiohttp
 import discord
@@ -29,8 +28,16 @@ dir_path = os.path.dirname(
 
 class Here:
     def __init__(self):
-        from Rai import Rai
-        self.bot: Optional[Rai] = None
+        if self.__class__.__name__ == "Rai":
+            # noinspection PyUnresolvedReferences, PyPackageRequirements
+            from Rai import Rai as MyBot
+        elif self.__class__.__name__ == "Modbot":
+            # noinspection PyUnresolvedReferences, PyPackageRequirements
+            from Modbot import Modbot as MyBot
+        else:
+            # noinspection PyPep8Naming
+            MyBot = commands.Bot
+        self.bot: Optional[MyBot] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
 
 here = Here()
@@ -238,13 +245,13 @@ async def user_converter(ctx: commands.Context, user_in: Union[str, int]) -> Uni
     try:
         user_id = int(re.search(r"<?@?!?(\d{17,22})>?", user_in).group(1))
     except (AttributeError, ValueError):
-        return
+        return None
     else:
         try:
             user = await ctx.bot.fetch_user(user_id)
             return user
         except (discord.NotFound, discord.HTTPException):
-            return
+            return None
 
 
 def _predump_json(name: str = 'db'):
@@ -269,6 +276,7 @@ def _predump_json(name: str = 'db'):
         shutil.copy(f'{dir_path}/{name}.json', f'{dir_path}/{name}_2.json')
 
     with open(f'{dir_path}/{name}_temp.json', 'w') as write_file:
+        # noinspection PyTypeChecker
         json.dump(db_copy, write_file, indent=4)
     shutil.copy(f'{dir_path}/{name}_temp.json', f'{dir_path}/{name}.json')
 
@@ -331,6 +339,7 @@ def load_db(bot, name: str):
     
     else:
         if name == 'message_queue':
+            # noinspection PyUnresolvedReferences
             from ..helper_functions import MessageQueue
             bot.message_queue = MessageQueue.from_dict(data)
         else:
@@ -369,6 +378,7 @@ def get_character_spread(text):
 
 
 def is_ignored_emoji(char):
+    # noinspection PyPep8Naming
     EMOJI_MAPPING = (
         (0x0080, 0x02AF),
         (0x0300, 0x03FF),
@@ -383,6 +393,7 @@ def is_ignored_emoji(char):
 
 
 def is_cjk(char):
+    # noinspection PyPep8Naming
     CJK_MAPPING = (
         (0x3040, 0x30FF),  # Hiragana + Katakana
         (0xFF66, 0xFF9D),  # Half-Width Katakana
@@ -393,6 +404,7 @@ def is_cjk(char):
 
 def is_english(char):
     # basically English characters save for w because of laughter
+    # noinspection PyPep8Naming
     RANGE_CHECK = (
         (0x61, 0x76),  # a to v
         (0x78, 0x7a),  # x to z
@@ -410,6 +422,11 @@ async def send_error_embed(bot: discord.Client,
                            ctx_or_event: Union[commands.Context, discord.Interaction, str],
                            error: BaseException,
                            *args, **kwargs):
+    """This can be called from:
+    - main.on_command_error
+    - main.on_error
+    - main.on_tree_error
+    - RaiView.on_error"""
     try:
         await send_error_embed_internal(bot, ctx_or_event, error, *args, **kwargs)
     except Exception as e:
@@ -421,17 +438,19 @@ async def send_error_embed_internal(bot: discord.Client,
                                     ctx_or_event: Union[commands.Context, discord.Interaction, str],
                                     error: BaseException,
                                     *args, **kwargs):
-    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
 
-    # command or interaction
+    # Determine if it's a command/interaction or an event
+    # this is a command error / application error
+    print(f"send error embed internal, {type(args)}, {args}")
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
-        msg = ctx.message
+        msg = ctx.message if isinstance(ctx, commands.Context) else None
 
         try:
             qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
-        except AttributeError:  # ctx.command.name is also None
+        except AttributeError:
             qualified_name = "Non-command"
+
         e = discord.Embed(title='Command Error', colour=0xcc3366)
         e.add_field(name='Name', value=qualified_name)
 
@@ -440,67 +459,100 @@ async def send_error_embed_internal(bot: discord.Client,
             fmt = f'{fmt}\nGuild: {ctx.guild} (ID: {ctx.guild.id})'
         e.add_field(name='Location', value=fmt, inline=False)
 
-    # event
+    # this is an event error
     else:
-        ctx = None
         event = ctx_or_event
         msg = None
 
         qualified_name = event
         e = discord.Embed(title='Event Error', colour=0xa32952)
         e.add_field(name='Event', value=event)
-        # e.description = f'```py\n{traceback.format_exc()}\n```'
-        # e.description = f'```py\n{exc}\n```'
         e.timestamp = discord.utils.utcnow()
 
-        if args:
-            args_str = ['```py']
-            for index, arg in enumerate(args):
-                args_str.append(f'[{index}]: {arg!r}')
-                if isinstance(arg, discord.Message):
-                    msg = arg
+    # Extract useful information from args (like guild, author, channel)
+    extra_info = {}
+    jump_url = ""
 
-            args_str.append('```')
-            e.add_field(name='Args', value='\n'.join(args_str), inline=False)
+    args_str = ['```py']
+    for index, arg in enumerate(args):
+        if not arg:
+            continue
 
+        args_str.append(f'[{index}]: {arg!r}')
+        if isinstance(arg, discord.Message):
+            msg = arg
+            extra_info['content'] = arg.content
+            extra_info['author_id'] = arg.author.id
+            extra_info['channel_id'] = arg.channel.id
+            if arg.guild:
+                extra_info['guild_id'] = arg.guild.id
+            jump_url = arg.jump_url
+        else:
+            if hasattr(arg, 'guild_id'):
+                extra_info['guild_id'] = arg.guild_id
+            if hasattr(arg, 'channel_id'):
+                extra_info['channel_id'] = arg.channel_id
+            if hasattr(arg, 'author_id'):
+                extra_info['author_id'] = arg.author_id
+
+    args_str.append('```')
+    if args:
+        e.add_field(name='Args', value='\n'.join(args_str), inline=False)
+
+    # Attach author info if available
     if msg:
-        e.add_field(name="Author", value=f'{msg.author} (ID: {msg.author.id})')
+        e.add_field(name="Author", value=f'{msg.author} ({msg.author.mention}, ID: {msg.author.id})')
         e.add_field(name="Message Content", value=f'```{msg.content[:1024 - 6]}```', inline=False)
 
-        jump_url = msg.jump_url
-    else:
-        jump_url = ""
+    # Include guild/channel details if available
+    if 'guild_id' in extra_info:
+        guild = bot.get_guild(extra_info['guild_id'])
+        if guild:
+            e.add_field(name='Guild', value=f'{guild} (ID: {guild.id})', inline=False)
+    if 'channel_id' in extra_info:
+        channel = bot.get_channel(extra_info['channel_id'])
+        e.add_field(name='Channel', value=f'{channel.mention}', inline=False)
 
+    # Log the error to the console and logging system
     print(datetime.now(), file=sys.stderr)
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
 
+    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
     logging.error(f"Error in {qualified_name}: {exc}")
 
-    if ctx:
-        if ctx.message:
-            traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
-        elif ctx.channel:
-            traceback_text = f'{ctx.channel.mention}\n```py\n{exc}```'
-        else:
-            traceback_text = f'```py\n{exc}```'
-    elif jump_url:
-        traceback_text = f'{jump_url}\n```py\n{exc}```'
-    else:
-        traceback_text = f'```py\n{exc[:1016]}```'
+    # Split the traceback into multiple messages if it's too long
+    traceback_segments = split_text_into_segments(exc, 1900)
 
-    e.timestamp = discord.utils.utcnow()
-    traceback_logging_channel_id = os.getenv("ERROR_CHANNEL_ID")
+    # Get the logging channel
+    traceback_logging_channel_id = os.getenv("ERROR_CHANNEL_ID") or os.getenv("TRACEBACK_LOGGING_CHANNEL")
     if not traceback_logging_channel_id:
-        traceback_logging_channel_id = os.getenv("TRACEBACK_LOGGING_CHANNEL")
-        if not traceback_logging_channel_id:
-            logging.error("No error channel ID found in the environment variables.")
-            return
-    view = None
-    if getattr(ctx, "message", None):
-        view = RaiView.from_message(ctx.message)
-    await bot.get_channel(int(traceback_logging_channel_id)).send(traceback_text[-2000:], embed=e, view=view)
-    print('')
+        logging.error("No error channel ID found in environment variables.")
+        return
+
+    traceback_channel = bot.get_channel(int(traceback_logging_channel_id))
+    if not traceback_channel:
+        logging.error(f"Could not find error logging channel with ID {traceback_logging_channel_id}.")
+        return
+
+    # Send the traceback in segments to avoid hitting the Discord limit
+    try:
+        if len(traceback_segments) > 1:
+            for index, segment in enumerate(traceback_segments):
+                if index == 0:
+                    await traceback_channel.send(f"{jump_url}\n```py\n{segment}```")
+                elif index != len(traceback_segments) - 1:
+                    await traceback_channel.send(f"```py\n{segment}```")
+                else:
+                    await traceback_channel.send(f"```py\n{segment}```", embed=e)
+        else:
+            await traceback_channel.send(f"{jump_url}\n```py\n{traceback_segments[0]}```", embed=e)
+    except discord.Forbidden:
+        logging.error("Bot lacks permission to send messages in the traceback channel.")
+    except discord.HTTPException as http_error:
+        logging.error(f"Failed to send error message: {http_error}")
+
+    print('')  # Empty print for spacing in logs
 
 
 # async def send_error_embed(bot: discord.Client,
@@ -649,7 +701,7 @@ def asyncio_task_done_callback(task: asyncio.Task):
         print(f"Unexpected error in task callback: {e}")
 
 
-def split_text_into_segments(text, segment_length=1024) -> List[str]:
+def split_text_into_segments(text, segment_length=1024) -> list[str]:
     """Split a long text into segments of a specified length."""
     segments = []
     while len(text) > segment_length:
