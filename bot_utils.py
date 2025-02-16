@@ -451,8 +451,7 @@ async def send_error_embed_internal(bot: discord.Client,
         except AttributeError:
             qualified_name = "Non-command"
 
-        e = discord.Embed(title='Command Error', colour=0xcc3366)
-        e.add_field(name='Name', value=qualified_name)
+        e = discord.Embed(title=f'Command Error ({qualified_name})', colour=0xcc3366)
 
         fmt = f'Channel: {ctx.channel} (ID: {ctx.channel.id})'
         if ctx.guild:
@@ -486,7 +485,7 @@ async def send_error_embed_internal(bot: discord.Client,
             extra_info['channel_id'] = arg.channel.id
             if arg.guild:
                 extra_info['guild_id'] = arg.guild.id
-            jump_url = arg.jump_url
+
         else:
             if hasattr(arg, 'guild_id'):
                 extra_info['guild_id'] = arg.guild_id
@@ -501,8 +500,10 @@ async def send_error_embed_internal(bot: discord.Client,
 
     # Attach author info if available
     if msg:
+        jump_url = msg.jump_url
         e.add_field(name="Author", value=f'{msg.author} ({msg.author.mention}, ID: {msg.author.id})')
-        e.add_field(name="Message Content", value=f'```{msg.content[:1024 - 6]}```', inline=False)
+        e.add_field(name="Message Content", value=f'{jump_url}\n```{msg.content[:1024 - 6 - 86 - 1]}```', inline=False)
+
 
     # Include guild/channel details if available
     if 'guild_id' in extra_info:
@@ -537,16 +538,11 @@ async def send_error_embed_internal(bot: discord.Client,
 
     # Send the traceback in segments to avoid hitting the Discord limit
     try:
-        if len(traceback_segments) > 1:
-            for index, segment in enumerate(traceback_segments):
-                if index == 0:
-                    await traceback_channel.send(f"{jump_url}\n```py\n{segment}```")
-                elif index != len(traceback_segments) - 1:
-                    await traceback_channel.send(f"```py\n{segment}```")
-                else:
-                    await traceback_channel.send(f"```py\n{segment}```", embed=e)
-        else:
-            await traceback_channel.send(f"{jump_url}\n```py\n{traceback_segments[0]}```", embed=e)
+        for index, segment in enumerate(traceback_segments):
+            if index != len(traceback_segments) - 1:
+                await traceback_channel.send(f"```py\n{segment}```")
+            else:
+                await traceback_channel.send(f"```py\n{segment}```", embed=e)
     except discord.Forbidden:
         logging.error("Bot lacks permission to send messages in the traceback channel.")
     except discord.HTTPException as http_error:
