@@ -225,27 +225,44 @@ async def member_converter(ctx: commands.Context, user_in: Union[str, int]) -> O
         member = ctx.guild.get_member(int(user_id))
         return member
 
-    # check for an exact name
-    member = ctx.guild.get_member_named(user_in)
-    if member:
-        return member
+    # # check for an exact name
+    # member = ctx.guild.get_member_named(user_in)
+    # if member:
+    #     return member
 
     # try the beginning of the name
-    member_list = [(member.name.casefold(), member.nick.casefold() if member.nick else '', member)
-                   for member in ctx.guild.members]
+    import cogs.utils.helper_functions as hf
+    top_members = hf.get_top_server_members_activity(ctx.guild)
+    top_members_names = [
+        (member.name.casefold(),
+         member.nick.casefold() if member.nick else '',
+         member.display_name.casefold() if member.display_name else '',
+         member)
+        for member in top_members]
+    remaining_member_list = [
+        (member.name.casefold(),
+         member.nick.casefold() if member.nick else '',
+         member.display_name.casefold() if member.display_name else '',
+         member)
+        for member in ctx.guild.members]
+    member_list = top_members_names + remaining_member_list  # the order is important
     user_in = user_in.casefold()
     for member in member_list:
         if member[0].startswith(user_in):
-            return member[2]
+            return member[3]
         if member[1].startswith(user_in):
-            return member[2]
+            return member[3]
+        if member[2].startswith(user_in):
+            return member[3]
 
     # is it anywhere in the name
     for member in member_list:
         if user_in in member[0]:
-            return member[2]
+            return member[3]
         if user_in in member[1]:
-            return member[2]
+            return member[3]
+        if user_in in member[2]:
+            return member[3]
 
     return None
 
