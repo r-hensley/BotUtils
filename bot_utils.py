@@ -744,3 +744,25 @@ def split_text_into_segments(text, segment_length=1024) -> list[str]:
         text = text[split_index:].lstrip()  # Remove leading spaces in the next segment
     segments.append(text)  # Append the last segment
     return segments
+    
+
+class RaiModal(discord.ui.Modal):
+    async def on_error(self,
+                       interaction: discord.Interaction,
+                       error: Exception):
+        e = discord.Embed(title=f'Modal Component Error', colour=0xcc3366)
+        e.add_field(name='Interaction User', value=f"{interaction.user} ({interaction.user.mention})")
+
+        fmt = f'Channel: {interaction.channel} (ID: {interaction.channel.id})'
+        if interaction.guild:
+            fmt = f'{fmt}\nGuild: {interaction.guild} (ID: {interaction.guild.id})'
+
+        e.add_field(name='Location', value=fmt, inline=False)
+
+        if interaction.data:
+            e.add_field(name="Data", value=f"```{interaction.data}```", inline=False)
+
+        if interaction.extras:
+            e.add_field(name="Extras", value=f"```{interaction.extras}```")
+
+        await send_error_embed(interaction.client, interaction, error, e)
