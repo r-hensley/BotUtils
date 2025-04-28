@@ -64,18 +64,18 @@ def setup(bot, loop):
         here.bot = bot
     else:
         pass
-
+    
     if here.loop is None:
         here.loop = loop
     else:
         pass
-
+    
     try:
         test_module = importlib.import_module("cogs.utils.BotUtils.tests.test_bot_utils")
+        test_module = importlib.reload(test_module)
     except ModuleNotFoundError:
         print("Skipping BotUtils test suite")
     else:
-        test_module = importlib.reload(test_module)
         suite = unittest.TestLoader().loadTestsFromModule(test_module)
         test_runner = unittest.TextTestRunner(verbosity=1)
         # Verbosity:
