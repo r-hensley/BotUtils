@@ -471,45 +471,45 @@ async def send_error_embed_internal(bot: discord.Client,
                                     ctx_or_event: Union[commands.Context, discord.Interaction, str],
                                     error: BaseException,
                                     *args, **kwargs):
-
+    
     # Determine if it's a command/interaction or an event
     # this is a command error / application error
     print(f"send error embed internal, {type(args)}, {args}")
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
         msg = ctx.message if isinstance(ctx, commands.Context) else None
-
+        
         try:
             qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
         except AttributeError:
             qualified_name = "Non-command"
-
+        
         e = discord.Embed(title=f'Command Error ({qualified_name})', colour=0xcc3366)
-
+        
         fmt = f'Channel: {ctx.channel} (ID: {ctx.channel.id})'
         if ctx.guild:
             fmt = f'{fmt}\nGuild: {ctx.guild} (ID: {ctx.guild.id})'
         e.add_field(name='Location', value=fmt, inline=False)
-
+    
     # this is an event error
     else:
         event = ctx_or_event
         msg = None
-
+        
         qualified_name = event
         e = discord.Embed(title='Event Error', colour=0xa32952)
         e.add_field(name='Event', value=event)
         e.timestamp = discord.utils.utcnow()
-
+    
     # Extract useful information from args (like guild, author, channel)
     extra_info = {}
     jump_url = ""
-
+    
     args_str = ['```py']
     for index, arg in enumerate(args):
         if not arg:
             continue
-
+        
         args_str.append(f'[{index}]: {arg!r}')
         if isinstance(arg, discord.Message):
             msg = arg
@@ -518,7 +518,7 @@ async def send_error_embed_internal(bot: discord.Client,
             extra_info['channel_id'] = arg.channel.id
             if arg.guild:
                 extra_info['guild_id'] = arg.guild.id
-
+        
         else:
             if hasattr(arg, 'guild_id'):
                 extra_info['guild_id'] = arg.guild_id
@@ -526,18 +526,18 @@ async def send_error_embed_internal(bot: discord.Client,
                 extra_info['channel_id'] = arg.channel_id
             if hasattr(arg, 'author_id'):
                 extra_info['author_id'] = arg.author_id
-
+    
     args_str.append('```')
     if args:
         e.add_field(name='Args', value='\n'.join(args_str), inline=False)
-
+    
     # Attach author info if available
     if msg:
         jump_url = msg.jump_url
         e.add_field(name="Author", value=f'{msg.author} ({msg.author.mention}, ID: {msg.author.id})')
         e.add_field(name="Message Content", value=f'{jump_url}\n```{msg.content[:1024 - 6 - 86 - 1]}```', inline=False)
-
-
+    
+    
     # Include guild/channel details if available
     if 'guild_id' in extra_info:
         guild = bot.get_guild(extra_info['guild_id'])
@@ -546,29 +546,58 @@ async def send_error_embed_internal(bot: discord.Client,
     if 'channel_id' in extra_info:
         channel = bot.get_channel(extra_info['channel_id'])
         e.add_field(name='Channel', value=f'{channel.mention}', inline=False)
-
+    
     # Log the error to the console and logging system
     print(datetime.now(), file=sys.stderr)
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
-
+    
     exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
     logging.error(f"Error in {qualified_name}: {exc}")
-
+    
+    # ignore certain parts of traceback text that are common across all tracebacks
+    ignore = [
+        (r'File \".*(discord)', r'File "...\1'),  # shorten discord.py file paths
+        (r'File \".*(Rai|DMModbot)', r'File "...\1'),  # shorten Rai/DMModbot file paths
+        # below two lines will also delete ^^^^^^ if it's the line after the main ones being deleted
+        (r'File \".*\n.*await coro\(\*args, \*\*kwargs\).*\n(?:.*\^{3,}.*\n)?', ''),  # delete lines that just print "await coro()"
+        (r'File \".*\n.*return await self\._callback.*\n(?:.*\^{3,}.*\n)?', ''),  # delete "return await self._callback" lines
+    ]
+    
+    for i, j in ignore:
+        print(i, j, [exc])
+        exc = re.sub(i, j, exc)
+        print(i, j, [exc])
+        
+    
+    # ignore almost everything after this in an exception
+    super_ignore = "The above exception was the direct cause of the following exception:"
+    
+    exc_split = exc.split(super_ignore)
+    # # below line replaces any filepath with just the final filename
+    # # example: /long/file/path/name.file --> name.file
+    # exc_split[1] = re.sub(r'File \".*/', r'File ".../', exc_split[1])  # file paths
+    # exc_split[1] = re.sub(r'.*\^{5,}.*\n', '', exc_split[1])  # ^^^^^^^^^^^^^
+    # exc_split[1] = re.sub(r'in (\w+)\n\W*(.*)', r'in \1: \2', exc_split[1])  # in invoke\nawait ...
+    #
+    # exc = exc_split[0] + super_ignore + exc_split[1]  # recombine parts
+    
+    exc = exc_split[0]  # ignore everything after super_ignore part
+    
     # Split the traceback into multiple messages if it's too long
     traceback_segments = split_text_into_segments(exc, 1900)
-
+    
     # Get the logging channel
     traceback_logging_channel_id = os.getenv("ERROR_CHANNEL_ID") or os.getenv("TRACEBACK_LOGGING_CHANNEL")
     if not traceback_logging_channel_id:
         logging.error("No error channel ID found in environment variables.")
         return
-
+    
     traceback_channel = bot.get_channel(int(traceback_logging_channel_id))
     if not traceback_channel:
         logging.error(f"Could not find error logging channel with ID {traceback_logging_channel_id}.")
         return
-
+    
     # Send the traceback in segments to avoid hitting the Discord limit
     try:
         for index, segment in enumerate(traceback_segments):
@@ -580,7 +609,7 @@ async def send_error_embed_internal(bot: discord.Client,
         logging.error("Bot lacks permission to send messages in the traceback channel.")
     except discord.HTTPException as http_error:
         logging.error(f"Failed to send error message: {http_error}")
-
+    
     print('')  # Empty print for spacing in logs
 
 
