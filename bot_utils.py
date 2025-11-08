@@ -474,7 +474,6 @@ async def send_error_embed_internal(bot: discord.Client,
     
     # Determine if it's a command/interaction or an event
     # this is a command error / application error
-    print(f"send error embed internal, {type(args)}, {args}")
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
         msg = ctx.message if isinstance(ctx, commands.Context) else None
@@ -565,10 +564,7 @@ async def send_error_embed_internal(bot: discord.Client,
     ]
     
     for i, j in ignore:
-        print(i, j, [exc])
         exc = re.sub(i, j, exc)
-        print(i, j, [exc])
-        
     
     # ignore almost everything after this in an exception
     super_ignore = "The above exception was the direct cause of the following exception:"
