@@ -544,7 +544,11 @@ async def send_error_embed_internal(bot: discord.Client,
             e.add_field(name='Guild', value=f'{guild} (ID: {guild.id})', inline=False)
     if 'channel_id' in extra_info:
         channel = bot.get_channel(extra_info['channel_id'])
-        e.add_field(name='Channel', value=f'{channel.mention}', inline=False)
+        if hasattr(channel, 'mention'):
+            mention = channel.mention
+        else:
+            mention = f'ID: {channel.id}, Name: {getattr(channel, "name", "Unknown")}'
+        e.add_field(name='Channel', value=mention, inline=False)
     
     # Log the error to the console and logging system
     print(datetime.now(), file=sys.stderr)
