@@ -143,7 +143,7 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
                     embeds: list[discord.Embed] = None,
                     delete_after: float = None,
                     file: discord.File = None,
-                    view: discord.ui.View = None):
+                    view: discord.ui.View = None, **kwargs):
     """A command to be clearer about permission errors when sending messages"""
     if not content and not embed and not file:
         if isinstance(destination, str):
@@ -187,7 +187,12 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
             raise ValueError("You can't pass both embed and embeds to safe_send")
         elif embed:
             embeds = [embed]
-        return await destination.send(content, embeds=embeds, delete_after=delete_after, file=file, view=view)
+        return await destination.send(content,
+                                      embeds=embeds,
+                                      delete_after=delete_after,
+                                      file=file,
+                                      view=view,
+                                      **kwargs)
 
     except discord.Forbidden:
         if isinstance(destination, commands.Context):
@@ -211,7 +216,8 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
             raise
 
 
-async def safe_reply(message: Union[discord.Message, commands.Context], content: str = None, **kwargs):
+async def safe_reply(message: Union[discord.Message, commands.Context], content: str = None,
+                     **kwargs):
     try:
         msg = await message.reply(content, **kwargs)
     except discord.HTTPException:
