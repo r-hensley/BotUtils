@@ -143,7 +143,7 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
                     embeds: list[discord.Embed] = None,
                     delete_after: float = None,
                     file: discord.File = None,
-                    view: discord.ui.View = None):
+                    view: discord.ui.View = None, **kwargs):
     """A command to be clearer about permission errors when sending messages"""
     if not content and not embed and not file:
         if isinstance(destination, str):
@@ -187,7 +187,12 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
             raise ValueError("You can't pass both embed and embeds to safe_send")
         elif embed:
             embeds = [embed]
-        return await destination.send(content, embeds=embeds, delete_after=delete_after, file=file, view=view)
+        return await destination.send(content,
+                                      embeds=embeds,
+                                      delete_after=delete_after,
+                                      file=file,
+                                      view=view,
+                                      **kwargs)
 
     except discord.Forbidden:
         if isinstance(destination, commands.Context):
@@ -211,7 +216,8 @@ async def safe_send(destination: Union[commands.Context, discord.abc.Messageable
             raise
 
 
-async def safe_reply(message: Union[discord.Message, commands.Context], content: str = None, **kwargs):
+async def safe_reply(message: Union[discord.Message, commands.Context], content: str = None,
+                     **kwargs):
     try:
         msg = await message.reply(content, **kwargs)
     except discord.HTTPException:
@@ -474,7 +480,6 @@ async def send_error_embed_internal(bot: discord.Client,
     
     # Determine if it's a command/interaction or an event
     # this is a command error / application error
-    print(f"send error embed internal, {type(args)}, {args}")
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
         ctx = ctx_or_event
         msg = ctx.message if isinstance(ctx, commands.Context) else None
@@ -545,7 +550,11 @@ async def send_error_embed_internal(bot: discord.Client,
             e.add_field(name='Guild', value=f'{guild} (ID: {guild.id})', inline=False)
     if 'channel_id' in extra_info:
         channel = bot.get_channel(extra_info['channel_id'])
-        e.add_field(name='Channel', value=f'{channel.mention}', inline=False)
+        if hasattr(channel, 'mention'):
+            mention = channel.mention
+        else:
+            mention = f'ID: {channel.id}, Name: {getattr(channel, "name", "Unknown")}'
+        e.add_field(name='Channel', value=mention, inline=False)
     
     # Log the error to the console and logging system
     print(datetime.now(), file=sys.stderr)
@@ -565,10 +574,7 @@ async def send_error_embed_internal(bot: discord.Client,
     ]
     
     for i, j in ignore:
-        print(i, j, [exc])
         exc = re.sub(i, j, exc)
-        print(i, j, [exc])
-        
     
     # ignore almost everything after this in an exception
     super_ignore = "The above exception was the direct cause of the following exception:"
