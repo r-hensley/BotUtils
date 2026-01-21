@@ -741,7 +741,7 @@ def asyncio_task(func: Callable, *args, **kwargs):
     else:
         # If not a coroutine function, wrap it in an async function
         async def wrapper():
-            return func(*args, **kwargs)
+            return await asyncio.to_thread(func, *args, **kwargs)
         
         coro = wrapper()
         
