@@ -768,6 +768,9 @@ def asyncio_task_done_callback(task: asyncio.Task):
 def split_text_into_segments(text, segment_length=1024) -> list[str]:
     """Split a long text into segments of a specified length."""
     segments = []
+    if len(text) > 20_000:
+        logging.warning("Text length exceeds 20,000 characters, reducing to 20,000 for safety.")
+        text = text[:20_000]
     while len(text) > segment_length:
         # Find the last new line before the segment limit to avoid breaking words
         split_index = text.rfind('\n', 0, segment_length)
