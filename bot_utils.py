@@ -154,7 +154,7 @@ def _run_git_command(*args: str, cwd: str = dir_path) -> str:
     return (result.stdout or "").strip()
 
 
-async def safe_git_pull(cwd: str = dir_path) -> str:
+async def safe_git_pull(cwd: str = dir_path, force: bool = False) -> str:
     """Safely fast-forward the bot repo.
 
     Refuses to pull if the repo is dirty, detached, missing an upstream, ahead of upstream,
@@ -169,7 +169,13 @@ async def safe_git_pull(cwd: str = dir_path) -> str:
 
         dirty = _run_git_command("status", "--porcelain", cwd=cwd)
         if dirty:
-            raise RuntimeError("Refusing to pull: worktree has uncommitted or untracked changes.")
+            tracked_dirty = bool(_run_git_command("diff", "--name-only", "HEAD", "--", cwd=cwd))
+            if tracked_dirty and force:
+                _run_git_command("reset", "--hard", "HEAD", cwd=cwd)
+                dirty = _run_git_command("status", "--porcelain", cwd=cwd)
+
+            if dirty:
+                raise RuntimeError("Refusing to pull: worktree has uncommitted or untracked changes.")
 
         upstream = _run_git_command("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", cwd=cwd)
         if not upstream:
