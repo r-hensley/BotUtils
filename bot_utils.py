@@ -193,12 +193,17 @@ async def safe_git_pull(cwd: str = dir_path, force: bool = False) -> str:
             return f"Already up to date on {branch}."
 
         pull_output = _run_git_command("pull", "--ff-only", "--no-rebase", cwd=cwd)
+        sync_output = _run_git_command("submodule", "sync", "--recursive", cwd=cwd)
+        submodule_output = _run_git_command("submodule", "update", "--init", "--recursive", cwd=cwd)
 
         post_dirty = _run_git_command("status", "--porcelain", cwd=cwd)
         if post_dirty:
             raise RuntimeError("Git pull completed but left unexpected worktree changes.")
 
-        return pull_output or f"Fast-forwarded {branch} from {upstream}."
+        output_parts = [part for part in [pull_output, sync_output, submodule_output] if part]
+        if output_parts:
+            return "\n".join(output_parts)
+        return f"Fast-forwarded {branch} from {upstream} and updated submodules."
     except (ValueError, RuntimeError) as exc:
         raise RuntimeError(f"safe_git_pull aborted: {exc}") from exc
 
