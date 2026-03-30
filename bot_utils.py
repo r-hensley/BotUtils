@@ -183,9 +183,9 @@ async def safe_git_pull(cwd: str = dir_path, force: bool = False) -> str:
 
         _run_git_command("fetch", "--prune", "--quiet", cwd=cwd)
         ahead_behind = _run_git_command("rev-list", "--left-right", "--count", "HEAD...@{u}", cwd=cwd)
-        behind_str, ahead_str = ahead_behind.split()
-        behind = int(behind_str)
+        ahead_str, behind_str = ahead_behind.split()
         ahead = int(ahead_str)
+        behind = int(behind_str)
 
         if ahead:
             raise RuntimeError(f"Refusing to pull: branch '{branch}' is ahead of '{upstream}' by {ahead} commit(s).")
