@@ -373,22 +373,30 @@ def _predump_json(name: str = 'db'):
         db_copy = deepcopy(here.bot.message_queue.to_dict_list())
     else:
         raise ValueError("name must be 'db' or 'stats' or 'message_queue'")
-        
-    if not os.path.exists(f'{dir_path}/{name}_2.json'):
-        # if backup files don't exist yet, create them
-        shutil.copy(f'{dir_path}/{name}.json', f'{dir_path}/{name}_2.json')
-        shutil.copy(f'{dir_path}/{name}_2.json', f'{dir_path}/{name}_3.json')
-        shutil.copy(f'{dir_path}/{name}_3.json', f'{dir_path}/{name}_4.json')
-    else:
-        # make incremental backups of db.json
-        shutil.copy(f'{dir_path}/{name}_3.json', f'{dir_path}/{name}_4.json')
-        shutil.copy(f'{dir_path}/{name}_2.json', f'{dir_path}/{name}_3.json')
-        shutil.copy(f'{dir_path}/{name}.json', f'{dir_path}/{name}_2.json')
 
-    with open(f'{dir_path}/{name}_temp.json', 'w') as write_file:
-        # noinspection PyTypeChecker
+    source_file = f'{dir_path}/{name}.json'
+    temp_file = f'{dir_path}/{name}_temp.json'
+
+    backup_dir = None
+    if name == 'db' and os.path.exists(source_file):
+        backup_dir = os.path.join(dir_path, 'database_backups_short')
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_timestamp = discord.utils.utcnow().strftime('%Y%m%d_%H%M%S_%f')
+        shutil.copy2(source_file, os.path.join(backup_dir, f'db_{backup_timestamp}.json'))
+
+    with open(temp_file, 'w') as write_file:
         json.dump(db_copy, write_file, indent=4)
-    shutil.copy(f'{dir_path}/{name}_temp.json', f'{dir_path}/{name}.json')
+    os.replace(temp_file, source_file)
+
+    if backup_dir:
+        backups = [
+            os.path.join(backup_dir, file_name)
+            for file_name in os.listdir(backup_dir)
+            if os.path.isfile(os.path.join(backup_dir, file_name))
+        ]
+        backups.sort(key=os.path.getmtime)
+        if len(backups) >= 10:
+            os.remove(backups[0])
 
 
 async def dump_json(name):
