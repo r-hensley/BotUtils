@@ -378,11 +378,11 @@ def _predump_json(name: str = 'db'):
     temp_file = f'{dir_path}/{name}_temp.json'
 
     backup_dir = None
-    if name == 'db' and os.path.exists(source_file):
+    if os.path.exists(source_file):
         backup_dir = os.path.join(dir_path, 'database_backups_short')
         os.makedirs(backup_dir, exist_ok=True)
         backup_timestamp = discord.utils.utcnow().strftime('%Y%m%d_%H%M%S_%f')
-        shutil.copy2(source_file, os.path.join(backup_dir, f'db_{backup_timestamp}.json'))
+        shutil.copy2(source_file, os.path.join(backup_dir, f'{name}_{backup_timestamp}.json'))
 
     with open(temp_file, 'w') as write_file:
         json.dump(db_copy, write_file, indent=4)
