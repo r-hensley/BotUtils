@@ -9,12 +9,13 @@ import subprocess
 import sys
 import traceback
 import unittest
+from contextlib import asynccontextmanager
 
 import emoji
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, AsyncIterator, Any
 
 import aiohttp
 import discord
@@ -42,6 +43,7 @@ class Here:
             MyBot = commands.Bot
         self.bot: Optional[MyBot] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        
 
 here = Here()
 
@@ -755,54 +757,77 @@ class RaiView(discord.ui.View):
         await send_error_embed(interaction.client, interaction, error, e)
 
 
-async def aiohttp_get(url: str, headers: dict = None) -> bytes:
-    """Wrapper just for getting the response"""
+@asynccontextmanager
+async def _aiohttp_get_base(
+        url: str,
+        headers: dict = None,
+        params: dict = None
+) -> AsyncIterator[aiohttp.ClientResponse]:
     if isinstance(url, commands.Context):
-        raise ValueError("You passed a context to aiohttp_get instead of a URL")
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url) as resp:
-            return await resp.read()
-        
-        
-async def _aiohttp_get_text(url: str, headers: dict = None) -> (aiohttp.ClientResponse, str):
-    """Wrapper just for getting the response"""
-    if isinstance(url, commands.Context):
-        raise ValueError("You passed a context to _aiohttp_get_text instead of a URL")
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url) as resp:
-            return resp, (await resp.text())
+        raise ValueError("You passed a context instead of a URL")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, params=params) as resp:
+            resp.raise_for_status()  # raises aiohttp.ClientResponseError if non-2xx status
+            yield resp
 
 
-async def aiohttp_get_text(ctx: commands.Context = None, url: str = "", headers: dict = None) -> str:
-    if not url:
-        raise ValueError("No URL provided to aiohttp_get")
-    
-    text: str
-    
+async def aiohttp_get_bytes(url: str, headers: dict = None, params: dict = None) -> bytes:
+    """Any non-200 / 200x status code returns aiohttp.ClientResponseError"""
+    async with _aiohttp_get_base(url, headers, params) as resp:
+        return await resp.read()
+
+
+async def _aiohttp_fetch_text(url: str, headers: dict = None, params: dict = None) -> str:
+    async with _aiohttp_get_base(url, headers, params) as resp:
+        return await resp.text()
+
+
+async def aiohttp_get_json(url: str, headers: dict = None, params: dict = None) -> dict | list | Any:
+    """Any non-200 / 200x status code returns aiohttp.ClientResponseError"""
+    async with _aiohttp_get_base(url, headers, params) as resp:
+        return await resp.json()  # likely a dict, but technically could be many things
+        # https://docs.python.org/3/library/json.html#json.JSONDecoder
+
+
+async def aiohttp_get_text(
+        url: str,
+        ctx: commands.Context = None,
+        headers: dict = None,
+        params: dict = None) -> str:
+    """Any non-200 / 200x status code returns aiohttp.ClientResponseError"""
     try:
-        response, text = await _aiohttp_get_text(url, headers=headers)
-    except (aiohttp.InvalidURL, aiohttp.ClientConnectorError):
+        text = await _aiohttp_fetch_text(url, headers=headers, params=params)
+        
+    except aiohttp.InvalidURL as e:
         if ctx:
             await safe_send(ctx, f'invalid_url:  Your URL was invalid ({url})')
+            return ""
         else:
-            raise ValueError(f'invalid_url:  Your URL was invalid ({url})')
-        return ''
-
-    if not text:
+            raise
+    
+    except aiohttp.ClientConnectionError as e:
         if ctx:
-            await safe_send(ctx, embed=red_embed("I received nothing from the site for your search query."))
+            await safe_send(ctx, f'connection_error ({e}) with URL {url}.')
+            return ""
         else:
-            raise ValueError("I received nothing from the site for your search query.")
-        return ''
-
-    if response.status == 200:
+            raise
+            
+    except aiohttp.ClientResponseError as e:
+        if ctx:
+            await safe_send(ctx, f'ClientResponseError: {e.status}: {e.message} ({url})')
+            return ""
+        else:
+            raise
+        
+    if text:
         return text
     else:
         if ctx:
-            await safe_send(ctx, f'html_error: Error {response.status}: {response.reason} ({url})')
+            await safe_send(ctx, embed=red_embed("I received nothing from the site for your search query."))
+            return ""
         else:
-            raise ValueError(f'html_error: Error {response.status}: {response.reason} ({url})')
-        return ''
+            raise ValueError("I received nothing from the site for your search query.")
 
 
 def asyncio_task(func: Callable, *args, **kwargs):
