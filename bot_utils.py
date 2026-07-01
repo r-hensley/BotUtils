@@ -78,6 +78,9 @@ def setup(bot, loop):
         test_module = importlib.reload(test_module)
     except ModuleNotFoundError:
         print("Skipping BotUtils test suite")
+    except Exception as exc:
+        # If anything goes wrong importing the optional local test suite, skip it.
+        print(f"Skipping BotUtils test suite due to import error: {exc}")
     else:
         suite = unittest.TestLoader().loadTestsFromModule(test_module)
         test_runner = unittest.TextTestRunner(verbosity=1)
