@@ -369,16 +369,18 @@ async def user_converter(ctx: commands.Context, user_in: Union[str, int]) -> Uni
             return None
 
 
-def _predump_json(name: str = 'db'):
+def _json_dump_data(name: str = 'db'):
     if name == 'db':
-        db_copy = deepcopy(here.bot.db)
+        return deepcopy(here.bot.db)
     elif name == 'stats':
-        db_copy = deepcopy(here.bot.stats)
+        return deepcopy(here.bot.stats)
     elif name == 'message_queue':
-        db_copy = deepcopy(here.bot.message_queue.to_dict_list())
+        return deepcopy(here.bot.message_queue.to_dict_list())
     else:
         raise ValueError("name must be 'db' or 'stats' or 'message_queue'")
 
+
+def _write_json_dump(name: str, db_copy):
     source_file = f'{dir_path}/{name}.json'
     temp_file = f'{dir_path}/{name}_temp.json'
 
@@ -404,6 +406,10 @@ def _predump_json(name: str = 'db'):
             os.remove(backups[0])
 
 
+def _predump_json(name: str = 'db'):
+    _write_json_dump(name, _json_dump_data(name))
+
+
 async def dump_json(name):
     # Wait up to five minutes for the lock to be released
     for _ in range(5):
@@ -422,7 +428,8 @@ async def dump_json(name):
             await here.loop.run_in_executor(None, _predump_json, name)
         except RuntimeError:
             print("Restarting dump_json on a RuntimeError")
-            await here.loop.run_in_executor(None, _predump_json, name)
+            db_copy = _json_dump_data(name)
+            await here.loop.run_in_executor(None, _write_json_dump, name, db_copy)
 
 
 def load_db(bot, name: str):
