@@ -48,8 +48,7 @@ def _blocking_worktree_changes(cwd: str) -> tuple[str, str, str, str]:
     # Check each initialized submodule from within its own worktree. Ignoring
     # nested submodules at each level is intentional: --recursive visits and
     # checks their actual worktrees separately. The cached and unmerged checks
-    # catch staged nested gitlinks hidden by --ignore-submodules=all. A clean
-    # mismatched commit is safe to reconcile only while a ref keeps it reachable.
+    # catch staged nested gitlinks hidden by --ignore-submodules=all.
     submodules = _run_git_command(
         "submodule",
         "foreach",
@@ -59,17 +58,44 @@ def _blocking_worktree_changes(cwd: str) -> tuple[str, str, str, str]:
             "git status --porcelain=v1 --untracked-files=all --ignore-submodules=all"
             " && git diff --cached --name-only HEAD --"
             " && git diff --name-only --diff-filter=U --"
-            " && current=$(git rev-parse HEAD)"
-            ' && if test "$current" != "$sha1"'
-            ' && test -z "$(git for-each-ref --format="%(refname)" --contains HEAD)";'
-            " then"
-            ' printf "Submodule %s is at unreferenced commit %s\\n"'
-            ' "$displaypath" "$current";'
-            " fi"
         ),
         cwd=cwd,
     )
     return top_level, staged, unmerged, submodules
+
+
+def _protect_submodule_commits(cwd: str) -> str:
+    """Give every initialized submodule HEAD an idempotent backup branch.
+
+    A remote-tracking ref can move while ``git submodule update`` fetches, and
+    an outer submodule ref does not keep nested commits reachable in their own
+    repositories. Protect every current HEAD before any checkout rather than
+    relying on its current reachability.
+    """
+    return _run_git_command(
+        "submodule",
+        "foreach",
+        "--quiet",
+        "--recursive",
+        (
+            "current=$(git rev-parse HEAD)"
+            ' && backup_ref="refs/heads/safe-pull-backup/$current"'
+            ' && existing=$(git rev-parse --verify --quiet "$backup_ref"'
+            " 2>/dev/null || :)"
+            ' && if test -z "$existing";'
+            " then"
+            ' git update-ref "$backup_ref" "$current" ""'
+            ' && printf "Protected submodule commit %s in %s as %s.\\n"'
+            ' "$current" "$displaypath" "${backup_ref#refs/heads/}";'
+            ' elif test "$existing" != "$current";'
+            " then"
+            ' printf "Backup ref collision in %s: %s points to %s, expected %s.\\n"'
+            ' "$displaypath" "$backup_ref" "$existing" "$current" >&2;'
+            " exit 1;"
+            " fi"
+        ),
+        cwd=cwd,
+    )
 
 
 def _has_untracked_changes(status_output: str) -> bool:
@@ -157,6 +183,8 @@ async def safe_git_pull(cwd: str = DEFAULT_REPO_PATH, force: bool = False) -> st
             if any((top_level, staged, unmerged, submodules)):
                 raise RuntimeError("Refusing to pull: worktree has uncommitted or untracked changes.")
 
+        protection_output = _protect_submodule_commits(cwd)
+
         pull_output = ""
         if behind:
             pull_output = _run_git_command(
@@ -188,7 +216,16 @@ async def safe_git_pull(cwd: str = DEFAULT_REPO_PATH, force: bool = False) -> st
             status_output = f"Fast-forwarded {branch} from {upstream}."
         else:
             status_output = f"Already up to date on {branch}."
-        output_parts = [part for part in [status_output, sync_output, submodule_output] if part]
+        output_parts = [
+            part
+            for part in [
+                status_output,
+                protection_output,
+                sync_output,
+                submodule_output,
+            ]
+            if part
+        ]
         return "\n".join(output_parts)
     except (ValueError, RuntimeError) as exc:
         raise RuntimeError(f"safe_git_pull aborted: {exc}") from exc
