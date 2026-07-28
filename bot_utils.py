@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import sys
 import traceback
 import unittest
@@ -20,6 +19,8 @@ from typing import Optional, Union, Callable, AsyncIterator, Any
 import aiohttp
 import discord
 from discord.ext import commands
+
+from .git_utils import safe_git_pull
 
 dir_path = os.path.dirname(
     os.path.dirname(
@@ -141,76 +142,6 @@ def red_embed(text):
 
 def grey_embed(text):
     return discord.Embed(description=text, color=0x848A84)
-
-
-def _run_git_command(*args: str, cwd: str = dir_path) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        stderr = (result.stderr or "").strip()
-        stdout = (result.stdout or "").strip()
-        details = stderr or stdout or f"git {' '.join(args)} failed"
-        raise RuntimeError(details)
-    return (result.stdout or "").strip()
-
-
-async def safe_git_pull(cwd: str = dir_path, force: bool = False) -> str:
-    """Safely fast-forward the bot repo.
-
-    Refuses to pull if the repo is dirty, detached, missing an upstream, ahead of upstream,
-    or otherwise not in a straightforward fast-forward state.
-    """
-    try:
-        inside_work_tree = _run_git_command("rev-parse", "--is-inside-work-tree", cwd=cwd)
-        if inside_work_tree != "true":
-            raise RuntimeError("Not inside a git worktree.")
-
-        branch = _run_git_command("symbolic-ref", "--short", "HEAD", cwd=cwd)
-
-        dirty = _run_git_command("status", "--porcelain", cwd=cwd)
-        if dirty:
-            tracked_dirty = bool(_run_git_command("diff", "--name-only", "HEAD", "--", cwd=cwd))
-            if tracked_dirty and force:
-                _run_git_command("reset", "--hard", "HEAD", cwd=cwd)
-                dirty = _run_git_command("status", "--porcelain", cwd=cwd)
-
-            if dirty:
-                raise RuntimeError("Refusing to pull: worktree has uncommitted or untracked changes.")
-
-        upstream = _run_git_command("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", cwd=cwd)
-        if not upstream:
-            raise RuntimeError("Refusing to pull: current branch has no upstream configured.")
-
-        _run_git_command("fetch", "--prune", "--quiet", cwd=cwd)
-        ahead_behind = _run_git_command("rev-list", "--left-right", "--count", "HEAD...@{u}", cwd=cwd)
-        ahead_str, behind_str = ahead_behind.split()
-        ahead = int(ahead_str)
-        behind = int(behind_str)
-
-        if ahead:
-            raise RuntimeError(f"Refusing to pull: branch '{branch}' is ahead of '{upstream}' by {ahead} commit(s).")
-        if behind == 0:
-            return f"Already up to date on {branch}."
-
-        pull_output = _run_git_command("pull", "--ff-only", "--no-rebase", cwd=cwd)
-        sync_output = _run_git_command("submodule", "sync", "--recursive", cwd=cwd)
-        submodule_output = _run_git_command("submodule", "update", "--init", "--recursive", cwd=cwd)
-
-        post_dirty = _run_git_command("status", "--porcelain", cwd=cwd)
-        if post_dirty:
-            raise RuntimeError("Git pull completed but left unexpected worktree changes.")
-
-        output_parts = [part for part in [pull_output, sync_output, submodule_output] if part]
-        if output_parts:
-            return "\n".join(output_parts)
-        return f"Fast-forwarded {branch} from {upstream} and updated submodules."
-    except (ValueError, RuntimeError) as exc:
-        raise RuntimeError(f"safe_git_pull aborted: {exc}") from exc
 
 
 async def safe_send(destination: Union[commands.Context, discord.abc.Messageable],
