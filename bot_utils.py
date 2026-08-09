@@ -1,4 +1,5 @@
 import asyncio
+import io
 import importlib
 import json
 import logging
@@ -59,6 +60,33 @@ SP_SERV_GUILD = discord.Object(SP_SERV_ID)
 JP_SERV_GUILD = discord.Object(JP_SERVER_ID)
 
 _lock = asyncio.Lock()
+
+TRACEBACK_ATTACHMENT_FILENAME = "rai-traceback.txt"
+TRACEBACK_MESSAGE_MARKER = "[botutils-traceback:v1] Full traceback attached."
+TRACEBACK_CAUSE_SEPARATOR = "The above exception was the direct cause of the following exception:"
+TRACEBACK_COMPACTION_PATTERNS = (
+    (r'File \".*(discord)', r'File "...\1'),
+    (r'File \".*(Rai|DMModbot)', r'File "...\1'),
+    (r'File \".*\n.*await coro\(\*args, \*\*kwargs\).*\n(?:.*\^{3,}.*\n)?', ''),
+    (r'File \".*\n.*return await self\._callback.*\n(?:.*\^{3,}.*\n)?', ''),
+)
+
+
+def get_traceback_logging_channel_id() -> int:
+    """Return the configured error channel, including the newer override."""
+    channel_id = os.getenv("ERROR_CHANNEL_ID") or os.getenv("TRACEBACK_LOGGING_CHANNEL", "0")
+    try:
+        return int(channel_id)
+    except (TypeError, ValueError):
+        return 0
+
+
+def compact_traceback_for_discord(full_traceback: str) -> str:
+    """Reproduce the compact traceback text used by the legacy logger."""
+    compact_traceback = full_traceback
+    for pattern, replacement in TRACEBACK_COMPACTION_PATTERNS:
+        compact_traceback = re.sub(pattern, replacement, compact_traceback)
+    return compact_traceback.split(TRACEBACK_CAUSE_SEPARATOR)[0]
 
 
 def setup(bot, loop):
@@ -584,39 +612,12 @@ async def send_error_embed_internal(bot: discord.Client,
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
     
     exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
+    full_traceback = exc
     logging.error(f"Error in {qualified_name}: {exc}")
-    
-    # ignore certain parts of traceback text that are common across all tracebacks
-    ignore = [
-        (r'File \".*(discord)', r'File "...\1'),  # shorten discord.py file paths
-        (r'File \".*(Rai|DMModbot)', r'File "...\1'),  # shorten Rai/DMModbot file paths
-        # below two lines will also delete ^^^^^^ if it's the line after the main ones being deleted
-        (r'File \".*\n.*await coro\(\*args, \*\*kwargs\).*\n(?:.*\^{3,}.*\n)?', ''),  # delete lines that just print "await coro()"
-        (r'File \".*\n.*return await self\._callback.*\n(?:.*\^{3,}.*\n)?', ''),  # delete "return await self._callback" lines
-    ]
-    
-    for i, j in ignore:
-        exc = re.sub(i, j, exc)
-    
-    # ignore almost everything after this in an exception
-    super_ignore = "The above exception was the direct cause of the following exception:"
-    
-    exc_split = exc.split(super_ignore)
-    # # below line replaces any filepath with just the final filename
-    # # example: /long/file/path/name.file --> name.file
-    # exc_split[1] = re.sub(r'File \".*/', r'File ".../', exc_split[1])  # file paths
-    # exc_split[1] = re.sub(r'.*\^{5,}.*\n', '', exc_split[1])  # ^^^^^^^^^^^^^
-    # exc_split[1] = re.sub(r'in (\w+)\n\W*(.*)', r'in \1: \2', exc_split[1])  # in invoke\nawait ...
-    #
-    # exc = exc_split[0] + super_ignore + exc_split[1]  # recombine parts
-    
-    exc = exc_split[0]  # ignore everything after super_ignore part
-    
-    # Split the traceback into multiple messages if it's too long
-    traceback_segments = split_text_into_segments(exc, 1900)
+    exc = compact_traceback_for_discord(full_traceback)
     
     # Get the logging channel
-    traceback_logging_channel_id = os.getenv("ERROR_CHANNEL_ID") or os.getenv("TRACEBACK_LOGGING_CHANNEL")
+    traceback_logging_channel_id = get_traceback_logging_channel_id()
     if not traceback_logging_channel_id:
         logging.error("No error channel ID found in environment variables.")
         return
@@ -626,13 +627,23 @@ async def send_error_embed_internal(bot: discord.Client,
         logging.error(f"Could not find error logging channel with ID {traceback_logging_channel_id}.")
         return
     
-    # Send the traceback in segments to avoid hitting the Discord limit
+    # Send one canonical message per exception. The attachment is the complete
+    # machine-readable traceback used by Rai's traceback forum pipeline; the
+    # short tail keeps the source logging channel easy to scan.
     try:
-        for index, segment in enumerate(traceback_segments):
-            if index != len(traceback_segments) - 1:
-                await traceback_channel.send(f"```py\n{segment}```")
-            else:
-                await traceback_channel.send(f"```py\n{segment}```", embed=e)
+        preview = exc[-1700:]
+        if len(exc) > len(preview):
+            preview = f"...\n{preview}"
+        traceback_file = discord.File(
+            io.BytesIO(full_traceback.encode("utf-8")),
+            filename=TRACEBACK_ATTACHMENT_FILENAME,
+        )
+        await traceback_channel.send(
+            f"{TRACEBACK_MESSAGE_MARKER}\n```py\n{preview}```",
+            embed=e,
+            file=traceback_file,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
     except discord.Forbidden:
         logging.error("Bot lacks permission to send messages in the traceback channel.")
     except discord.HTTPException as http_error:
