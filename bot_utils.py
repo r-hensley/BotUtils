@@ -528,6 +528,18 @@ async def send_error_embed_internal(bot: discord.Client,
                                     error: BaseException,
                                     *args, **kwargs):
     
+    full_traceback = "".join(traceback.TracebackException.from_exception(
+        error, limit=sys.maxsize, max_group_width=sys.maxsize, max_group_depth=sys.maxsize
+    ).format(chain=True))
+    marker = TRACEBACK_MESSAGE_MARKER
+    recorder = getattr(bot, "record_traceback", None)
+    if recorder is not None:
+        try:
+            event_id = await recorder(error, ctx_or_event, full_traceback)
+            marker += f"\nTraceback event: {event_id}"
+        except Exception:
+            logging.exception("Could not archive traceback locally")
+
     # Determine if it's a command/interaction or an event
     # this is a command error / application error
     if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
@@ -611,9 +623,7 @@ async def send_error_embed_internal(bot: discord.Client,
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
     
-    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=True))
-    full_traceback = exc
-    logging.error(f"Error in {qualified_name}: {exc}")
+    logging.error(f"Error in {qualified_name}: {full_traceback}")
     exc = compact_traceback_for_discord(full_traceback)
     
     # Get the logging channel
@@ -639,7 +649,7 @@ async def send_error_embed_internal(bot: discord.Client,
             filename=TRACEBACK_ATTACHMENT_FILENAME,
         )
         await traceback_channel.send(
-            f"{TRACEBACK_MESSAGE_MARKER}\n```py\n{preview}```",
+            f"{marker}\n```py\n{preview}```",
             embed=e,
             file=traceback_file,
             allowed_mentions=discord.AllowedMentions.none(),
